@@ -1,0 +1,67 @@
+version: 2
+jobs:
+  build:
+    working_directory: ~/Lusitaniae/dummy_exporter
+    parallelism: 1
+    shell: /bin/bash --login
+
+    environment:
+      CIRCLE_ARTIFACTS: /tmp/circleci-artifacts
+      CIRCLE_TEST_REPORTS: /tmp/circleci-test-results
+      DOCKER_IMAGE_NAME: lusotycoon/dummy-exporter
+      QUAY_IMAGE_NAME: quay.io/lusitaniae/dummy-exporter
+      DOCKER_TEST_IMAGE_NAME: quay.io/prometheus/golang-builder:1.8-base
+      REPO_PATH: github.com/Lusitaniae/dummy_exporter
+
+    machine:
+      image: circleci/classic:201708-01
+
+    steps:
+    - checkout
+
+    - run: mkdir -p $CIRCLE_ARTIFACTS $CIRCLE_TEST_REPORTS
+
+    - run:
+        working_directory: ~/Lusitaniae/dummy_exporter
+        command: sudo curl -L -o /usr/bin/docker 'https://s3-external-1.amazonaws.com/circle-downloads/docker-1.9.1-circleci'
+
+    - run:
+        working_directory: ~/Lusitaniae/dummy_exporter
+        command: sudo chmod 0755 /usr/bin/docker
+
+    - run:
+        working_directory: ~/Lusitaniae/dummy_exporter
+        command: sudo curl -L 'https://github.com/aktau/github-release/releases/download/v0.6.2/linux-amd64-github-release.tar.bz2' | tar xvjf - --strip-components 3 -C $HOME/bin
+
+    - run:
+        working_directory: ~/Lusitaniae/dummy_exporter
+        command: echo -e "export DOCKER_IMAGE_NAME=lusotycoon/dummy-exporter\nexport QUAY_IMAGE_NAME=quay.io/lusitaniae/dummy-exporter\nexport DOCKER_TEST_IMAGE_NAME=quay.io/prometheus/golang-builder:1.8-base\nexport REPO_PATH=github.com/Lusitaniae/dummy_exporter" >> $BASH_ENV
+
+    - run:
+        working_directory: ~/Lusitaniae/dummy_exporter
+        command: 'sudo docker info >/dev/null 2>&1 || sudo service docker start; '
+
+    # This is based on your 1.0 configuration file or project settings
+    - run: make promu
+    - run: docker info
+    # This is based on your 1.0 configuration file or project settings
+    - run: promu crossbuild
+    - run: ln -s .build/linux-amd64/dummy_exporter dummy_exporter
+    - run: |
+        if [ -n "$CIRCLE_TAG" ]; then
+          make docker DOCKER_IMAGE_NAME=$DOCKER_IMAGE_NAME DOCKER_IMAGE_TAG=$CIRCLE_TAG
+          make docker DOCKER_IMAGE_NAME=$QUAY_IMAGE_NAME DOCKER_IMAGE_TAG=$CIRCLE_TAG
+        else
+          make docker DOCKER_IMAGE_NAME=$DOCKER_IMAGE_NAME
+          make docker DOCKER_IMAGE_NAME=$QUAY_IMAGE_NAME
+        fi
+    # This is based on your 1.0 configuration file or project settings
+    - run: mkdir $CIRCLE_ARTIFACTS/binaries/ && cp -a .build/* $CIRCLE_ARTIFACTS/binaries/
+    - run: docker images
+
+    # Test
+    #   This would typically be a build job when using workflows, possibly combined with build
+    # This is based on your 1.0 configuration file or project settings
+    - run: docker run --rm -t -v "$(pwd):/app" "${DOCKER_TEST_IMAGE_NAME}" -i "${REPO_PATH}" -T
+    # Deployment
+    # Your existing circle.yml file contains deployment steps.
